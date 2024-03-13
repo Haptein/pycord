@@ -252,6 +252,9 @@ class Client:
             VoiceClient.warn_nacl = False
             _log.warning("PyNaCl is not installed, voice will NOT be supported")
 
+        # Used to hard-reference tasks so they don't get garbage collected (we clear them with done_callbacks)
+        self._tasks: set[asyncio.Task] = set()
+
     # internals
 
     def _get_websocket(
@@ -392,8 +395,12 @@ class Client:
         **kwargs: Any,
     ) -> asyncio.Task:
         wrapped = self._run_event(coro, event_name, *args, **kwargs)
-        # Schedules the task
-        return asyncio.create_task(wrapped, name=f"pycord: {event_name}")
+
+        # Schedule task and store in set to avoid task garbage collection
+        task = asyncio.create_task(wrapped, name=f"pycord: {event_name}")
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
 
     def dispatch(self, event: str, *args: Any, **kwargs: Any) -> None:
         _log.debug("Dispatching event %s", event)
